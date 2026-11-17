@@ -1,0 +1,76 @@
+name: Build ToshibaGlassOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-common mtools wget gnupg
+
+      - name: Build Custom Liquid Glass OS
+        run: |
+          mkdir -p build/chroot build/image/live build/image/isolinux
+          sudo debootstrap --arch=amd64 --variant=minbase bookworm build/chroot http://debian.org
+          sudo cp /etc/resolv.conf build/chroot/etc/resolv.conf
+          sudo mount --bind /dev build/chroot/dev
+          sudo mount --bind /proc build/chroot/proc
+          sudo mount --bind /sys build/chroot/sys
+
+          cat << 'EOF' | sudo tee build/chroot/setup.sh
+          #!/bin/bash
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends linux-image-amd64 live-boot systemd-sysv \
+            xorg openbox plank picom tint2 network-manager-gnome pulseaudio \
+            wget ca-certificates gnupg sudo firmware-linux-free
+
+          wget -q https://google.com
+          apt-get install -y ./google-chrome-stable_current_amd64.deb
+          rm -f google-chrome-stable_current_amd64.deb
+
+          useradd -m -s /bin/bash -G sudo user
+          echo "user:1234" | chpasswd
+          echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+          mkdir -p /etc/systemd/system/getty@tty1.service.d
+          printf "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin user --noclear %%I \$TERM\n" > /etc/systemd/system/getty@tty1.service.d/override.conf
+
+          mkdir -p /home/user/.config/picom /home/user/.config/openbox
+          printf "backend = \"xrender\";\nblur-background = true;\nblur-method = \"box\";\nblur-size = 12;\nactive-opacity = 0.92;\ninactive-opacity = 0.84;\n" > /home/user/.config/picom/picom.conf
+          printf "picom -b &\ntint2 &\nplank &\nnm-applet &\n" > /home/user/.config/openbox/autostart
+
+          printf "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && exec startx\n" >> /home/user/.bash_profile
+          printf "exec openbox-session\n" > /home/user/.xinitrc
+          chown -R user:user /home/user
+          apt-get clean
+          EOF
+
+          sudo chmod +x build/chroot/setup.sh
+          sudo chroot build/chroot /setup.sh
+          sudo rm -f build/chroot/setup.sh
+          sudo umount -lf build/chroot/dev build/chroot/proc build/chroot/sys
+
+          sudo mksquashfs build/chroot build/image/live/filesystem.squashfs -comp xz
+          sudo cp build/chroot/boot/vmlinuz-* build/image/live/vmlinuz
+          sudo cp build/chroot/boot/initrd.img-* build/image/live/initrd
+
+          printf "DEFAULT live\nLABEL live\n  KERNEL /live/vmlinuz\n  APPEND initrd=/live/initrd boot=live quiet splash\n" > build/image/isolinux/isolinux.cfg
+          cp /usr/lib/ISOLINUX/isolinux.bin build/image/isolinux/
+          cp /usr/lib/syslinux/modules/bios/{ldlinux.c32,libutil.c32,menu.c32} build/image/isolinux/
+
+          xorriso -as mkisofs -o ToshibaGlassOS.iso \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -c isolinux/boot.cat -b isolinux/isolinux.bin \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            build/image
+
+      - name: Upload ToshibaGlassOS ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToshibaGlassOS
+          path: ToshibaGlassOS.iso
