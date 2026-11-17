@@ -15,13 +15,16 @@ jobs:
       - name: Build Custom Liquid Glass OS
         run: |
           mkdir -p build/chroot build/image/casper build/image/isolinux
-          sudo debootstrap --arch=amd64 --variant=minbase noble build/chroot http://ubuntu.com
+          MIRROR=$(grep -m1 '^deb ' /etc/apt/sources.list | awk '{print $2}')
+          [ -z "$MIRROR" ] && MIRROR="http://ubuntu.com"
+          sudo debootstrap --arch=amd64 --variant=minbase noble build/chroot "$MIRROR"
+
           sudo cp /etc/resolv.conf build/chroot/etc/resolv.conf
           sudo mount --bind /dev build/chroot/dev
           sudo mount --bind /proc build/chroot/proc
           sudo mount --bind /sys build/chroot/sys
 
-          sudo bash -c 'printf "deb http://ubuntu.com noble main restricted universe multiverse\ndeb http://ubuntu.com noble-updates main restricted universe multiverse\n" > build/chroot/etc/apt/sources.list'
+          sudo bash -c "printf 'deb $MIRROR noble main restricted universe multiverse\ndeb $MIRROR noble-updates main restricted universe multiverse\n' > build/chroot/etc/apt/sources.list"
 
           sudo chroot build/chroot bash -c "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends linux-image-generic casper systemd-sysv xorg openbox plank picom tint2 network-manager-gnome pulseaudio wget ca-certificates gnupg sudo linux-firmware"
           sudo chroot build/chroot bash -c "wget -q https://google.com && DEBIAN_FRONTEND=noninteractive apt-get install -y ./google-chrome-stable_current_amd64.deb && rm -f google-chrome-stable_current_amd64.deb"
@@ -33,8 +36,8 @@ jobs:
           sudo mkdir -p build/chroot/home/user/.config/picom build/chroot/home/user/.config/openbox
           sudo bash -c 'printf "backend = \"xrender\";\nblur-background = true;\nblur-method = \"box\";\nblur-size = 12;\nactive-opacity = 0.92;\ninactive-opacity = 0.84;\n" > build/chroot/home/user/.config/picom/picom.conf'
           sudo bash -c 'printf "picom -b &\ntint2 &\nplank &\nnm-applet &\n" > build/chroot/home/user/.config/openbox/autostart'
-          sudo bash -c 'printf "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && exec startx\n" >> /home/user/.bash_profile'
-          sudo bash -c 'printf "exec openbox-session\n" > /home/user/.xinitrc'
+          sudo bash -c 'printf "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && exec startx\n" >> build/chroot/home/user/.bash_profile'
+          sudo bash -c 'printf "exec openbox-session\n" > build/chroot/home/user/.xinitrc'
 
           sudo chroot build/chroot chown -R user:user /home/user
           sudo chroot build/chroot apt-get clean
