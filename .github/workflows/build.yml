@@ -14,14 +14,16 @@ jobs:
 
       - name: Build Custom Liquid Glass OS
         run: |
-          mkdir -p build/chroot build/image/live build/image/isolinux
-          sudo debootstrap --arch=amd64 --variant=minbase --no-check-gpg bookworm build/chroot http://debian.org
+          mkdir -p build/chroot build/image/casper build/image/isolinux
+          sudo debootstrap --arch=amd64 --variant=minbase noble build/chroot http://ubuntu.com
           sudo cp /etc/resolv.conf build/chroot/etc/resolv.conf
           sudo mount --bind /dev build/chroot/dev
           sudo mount --bind /proc build/chroot/proc
           sudo mount --bind /sys build/chroot/sys
 
-          sudo chroot build/chroot bash -c "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends linux-image-amd64 live-boot systemd-sysv xorg openbox plank picom tint2 network-manager-gnome pulseaudio wget ca-certificates gnupg sudo firmware-linux-free"
+          sudo bash -c 'printf "deb http://ubuntu.com noble main restricted universe multiverse\ndeb http://ubuntu.com noble-updates main restricted universe multiverse\n" > build/chroot/etc/apt/sources.list'
+
+          sudo chroot build/chroot bash -c "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends linux-image-generic casper systemd-sysv xorg openbox plank picom tint2 network-manager-gnome pulseaudio wget ca-certificates gnupg sudo linux-firmware"
           sudo chroot build/chroot bash -c "wget -q https://google.com && DEBIAN_FRONTEND=noninteractive apt-get install -y ./google-chrome-stable_current_amd64.deb && rm -f google-chrome-stable_current_amd64.deb"
           sudo chroot build/chroot bash -c "useradd -m -s /bin/bash -G sudo user && echo 'user:1234' | chpasswd && echo 'user ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers"
 
@@ -31,18 +33,18 @@ jobs:
           sudo mkdir -p build/chroot/home/user/.config/picom build/chroot/home/user/.config/openbox
           sudo bash -c 'printf "backend = \"xrender\";\nblur-background = true;\nblur-method = \"box\";\nblur-size = 12;\nactive-opacity = 0.92;\ninactive-opacity = 0.84;\n" > build/chroot/home/user/.config/picom/picom.conf'
           sudo bash -c 'printf "picom -b &\ntint2 &\nplank &\nnm-applet &\n" > build/chroot/home/user/.config/openbox/autostart'
-          sudo bash -c 'printf "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && exec startx\n" >> build/chroot/home/user/.bash_profile'
-          sudo bash -c 'printf "exec openbox-session\n" > build/chroot/home/user/.xinitrc'
+          sudo bash -c 'printf "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && exec startx\n" >> /home/user/.bash_profile'
+          sudo bash -c 'printf "exec openbox-session\n" > /home/user/.xinitrc'
 
           sudo chroot build/chroot chown -R user:user /home/user
           sudo chroot build/chroot apt-get clean
           sudo umount -lf build/chroot/dev build/chroot/proc build/chroot/sys
 
-          sudo mksquashfs build/chroot build/image/live/filesystem.squashfs -comp xz
-          sudo cp build/chroot/boot/vmlinuz-* build/image/live/vmlinuz
-          sudo cp build/chroot/boot/initrd.img-* build/image/live/initrd
+          sudo mksquashfs build/chroot build/image/casper/filesystem.squashfs -comp xz
+          sudo cp build/chroot/boot/vmlinuz-* build/image/casper/vmlinuz
+          sudo cp build/chroot/boot/initrd.img-* build/image/casper/initrd
 
-          printf "DEFAULT live\nLABEL live\n  KERNEL /live/vmlinuz\n  APPEND initrd=/live/initrd boot=live quiet splash\n" > build/image/isolinux/isolinux.cfg
+          printf "DEFAULT live\nLABEL live\n  KERNEL /casper/vmlinuz\n  APPEND initrd=/casper/initrd boot=casper quiet splash ---\n" > build/image/isolinux/isolinux.cfg
           cp /usr/lib/ISOLINUX/isolinux.bin build/image/isolinux/
           cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /usr/lib/syslinux/modules/bios/libutil.c32 /usr/lib/syslinux/modules/bios/menu.c32 build/image/isolinux/
 
